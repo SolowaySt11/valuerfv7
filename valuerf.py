@@ -1,7 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 import requests
-from datetime import datetime
 
 TOKEN = "8847119724:AAGudqiuhIdAoehPBwTCnJKywUmeoKxb7_E"
 
@@ -16,49 +15,36 @@ def get_currency_rate(currency_code):
     except:
         return None
 
-# ---------- МЕТАЛЛЫ (ЦБ РФ, руб/грамм) ----------
-def get_cbr_metal_price(metal_code):
-    """metal_code: 'AU' (золото), 'AG' (серебро), 'PT' (платина), 'PD' (палладий)"""
-    today = datetime.now().strftime("%d/%m/%Y")
-    url = f"https://cbr.ru/scripts/RML_daily_met_reestr.asp?date={today}&Met={metal_code}"
+# ---------- ЦЕНЫ МЕТАЛЛОВ (GoldAPI, унции) ----------
+def get_metal_price(metal_name):
+    url = f"https://api.gold-api.com/price/{metal_name}"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            return float(response.text.strip())
+            data = response.json()
+            price_usd = data['price']
+            usd_rate = get_currency_rate("USD")
+            if usd_rate:
+                return round(price_usd * usd_rate, 2)  # цена в рублях за унцию
         return None
     except:
-        return None
-
-# ---------- АКЦИИ (ejtrader, Investing.com) ----------
-def get_stock_price(ticker):
-    try:
-        import ejtrader
-        search = ejtrader.search_quotes(text=ticker, products=['stocks'], n_results=1)
-        if search:
-            recent = search.retrieve_recent_data()
-            if recent is not None and not recent.empty:
-                return round(recent['Close'].iloc[-1], 2)
-        return None
-    except Exception as e:
-        print(f"Ошибка акций {ticker}: {e}")
         return None
 
 # ---------- ГЛАВНОЕ МЕНЮ ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("🪙 Драгоценные металлы (ЦБ)", callback_data="metals")],
-        [InlineKeyboardButton("💵 Валюты", callback_data="currencies")],
-        [InlineKeyboardButton("📈 Акции (ejtrader)", callback_data="stocks")]
+        [InlineKeyboardButton("🪙 Драгоценные металлы", callback_data="metals")],
+        [InlineKeyboardButton("💵 Валюты", callback_data="currencies")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "🏭 *Инвестиционный дашборд (Тест: ЦБ + акции)*\n\n"
+        "🏭 *Инвестиционный дашборд*\n\n"
         "Здравствуй! Выбери категорию.",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
 
-# ---------- МЕНЮ МЕТАЛЛОВ ----------
+# ---------- МЕНЮ ДРАГМЕТАЛЛОВ ----------
 async def metals_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     keyboard = [
@@ -83,20 +69,7 @@ async def currencies_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text("💵 Выбери валюту:", reply_markup=reply_markup)
 
-# ---------- МЕНЮ АКЦИЙ ----------
-async def stocks_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    keyboard = [
-        [InlineKeyboardButton("🛢️ Газпром", callback_data="GAZP")],
-        [InlineKeyboardButton("🏦 Сбербанк", callback_data="SBER")],
-        [InlineKeyboardButton("⛽ Лукойл", callback_data="LKOH")],
-        [InlineKeyboardButton("🌐 Яндекс", callback_data="YDEX")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text("📈 Выбери акцию:", reply_markup=reply_markup)
-
-# ---------- ОБРАБОТЧИК ----------
+# ---------- ОБРАБОТЧИК КНОПОК ----------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -114,32 +87,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await currencies_menu(update, context)
         return
 
-    if data == "stocks":
-        await stocks_menu(update, context)
-        return
-
-    # Металлы (ЦБ)
+    # Металлы
     if data == "gold":
-        price = get_cbr_metal_price("AU")
-        text = f"🥇 Золото: {price} ₽/г" if price else "❌ Не удалось получить цену золота"
+        price = get_metal_price("XAU")
+        text = f"🥇 Золото: {price} ₽/унция" if price else "❌ Не удалось получить цену золота"
         await query.edit_message_text(text)
         return
 
     if data == "silver":
-        price = get_cbr_metal_price("AG")
-        text = f"🥈 Серебро: {price} ₽/г" if price else "❌ Не удалось получить цену серебра"
+        price = get_metal_price("XAG")
+        text = f"🥈 Серебро: {price} ₽/унция" if price else "❌ Не удалось получить цену серебра"
         await query.edit_message_text(text)
         return
 
     if data == "PLAT":
-        price = get_cbr_metal_price("PT")
-        text = f"💍 Платина: {price} ₽/г" if price else "❌ Не удалось получить цену платины"
+        price = get_metal_price("XPT")
+        text = f"💍 Платина: {price} ₽/унция" if price else "❌ Не удалось получить цену платины"
         await query.edit_message_text(text)
         return
 
     if data == "PLD":
-        price = get_cbr_metal_price("PD")
-        text = f"🪨 Палладий: {price} ₽/г" if price else "❌ Не удалось получить цену палладия"
+        price = get_metal_price("XPD")
+        text = f"🪨 Палладий: {price} ₽/унция" if price else "❌ Не удалось получить цену палладия"
         await query.edit_message_text(text)
         return
 
@@ -158,24 +127,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text)
         return
 
-    # Акции
-    if data in ["GAZP", "SBER", "LKOH", "YDEX"]:
-        price = get_stock_price(data)
-        if price:
-            if data == "GAZP":
-                name = "🛢️ Газпром"
-            elif data == "SBER":
-                name = "🏦 Сбербанк"
-            elif data == "LKOH":
-                name = "⛽ Лукойл"
-            else:
-                name = "🌐 Яндекс"
-            text = f"{name}: {price} ₽"
-        else:
-            text = f"❌ Не удалось получить цену для {data}"
-        await query.edit_message_text(text)
-        return
-
+# ---------- HELP ----------
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Используй /start для начала работы.")
 
@@ -185,7 +137,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    print("Бот запущен (тест ЦБ + акции)...")
+    print("Бот SolowayValue запущен...")
     app.run_polling()
 
 if __name__ == "__main__":
